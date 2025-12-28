@@ -1,0 +1,93 @@
+version: '3.8'
+name: mongo-sharding
+
+services:
+  # Конфигурационный сервер (реплика-сет из 1 ноды)
+  configsvr:
+    image: mongo:latest
+    container_name: configsvr
+    restart: always
+    command: >
+      mongod --configsvr --replSet configReplSet 
+      --bind_ip_all --port 27017
+    ports:
+      - "27017:27017"
+    networks:
+      mongo-network:
+        ipv4_address: 173.17.0.11
+
+  # Шард 1 (реплика-сет из 1 ноды)
+  shard1:
+    image: mongo:latest
+    container_name: shard1
+    restart: always
+    command: >
+      mongod --shardsvr --replSet shard1ReplSet 
+      --bind_ip_all --port 27018
+    ports:
+      - "27018:27018"
+    networks:
+      mongo-network:
+        ipv4_address: 173.17.0.12
+
+  # Шард 2 (реплика-сет из 1 ноды)
+  shard2:
+    image: mongo:latest
+    container_name: shard2
+    restart: always
+    command: >
+      mongod --shardsvr --replSet shard2ReplSet 
+      --bind_ip_all --port 27019
+    ports:
+      - "27019:27019"
+    networks:
+      mongo-network:
+        ipv4_address: 173.17.0.13
+
+  # Mongos роутер
+  mongos:
+    image: mongo:latest
+    container_name: mongos
+    restart: always
+    command: >
+      mongos --configdb configReplSet/configsvr:27017 
+      --bind_ip_all --port 27020
+    ports:
+      - "27020:27020"
+    depends_on:
+      - configsvr
+      - shard1
+      - shard2
+    networks:
+      mongo-network:
+        ipv4_address: 173.17.0.14
+
+  # Приложение
+  pymongo_api:
+    container_name: pymongo_api
+    build: 
+      context: api_app
+      dockerfile: Dockerfile
+    depends_on:
+      mongos:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      MONGODB_URL: "mongodb://mongos:27020"
+      MONGODB_DATABASE_NAME: "somedb"
+    networks:
+      - mongo-network
+
+networks:
+  mongo-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 173.17.0.0/16
+
+volumes:
+  configsvr-data:
+  shard1-data:
+  shard2-data:
